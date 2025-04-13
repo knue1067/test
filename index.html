@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>약수 퍼즐 게임</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    .problem-area {
+      margin-bottom: 30px;
+      text-align: center;
+    }
+    .target-block {
+      background-color: #a94442;
+      color: white;
+      text-align: center;
+      height: 60px;
+      line-height: 60px;
+      margin: 0 auto 10px;
+      box-sizing: content-box;
+    }
+    .drop-zones {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    .drop-zone {
+      display: flex;
+      flex-wrap: nowrap;
+      border: none;
+      height: 60px;
+      background-color: #f9f9f9;
+      overflow: hidden;
+      box-sizing: content-box;
+      position: relative;
+    }
+    .hint-grid {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 60px;
+      display: none;
+      pointer-events: none;
+    }
+    .hint-cell {
+      height: 60px;
+      border: 1px dashed rgba(0, 0, 0, 0.3);
+      box-sizing: border-box;
+      flex-shrink: 0;
+    }
+    .block-bank {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      margin: 20px 0;
+    }
+    .block {
+      height: 60px;
+      line-height: 60px;
+      background-color: #ffd966;
+      text-align: center;
+      border-radius: 0;
+      cursor: pointer;
+      user-select: none;
+      border: 1px solid #999;
+      flex-shrink: 0;
+      box-sizing: border-box;
+    }
+    #checkBtn, #nextBtn {
+      margin-top: 15px;
+      padding: 8px 16px;
+      background-color: #5bc0de;
+      border: none;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 10px;
+    }
+    #result {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body style="transform-origin: top center;">
+  <div id="helpBox" style="max-width: 800px; text-align: left; margin-bottom: 20px; padding: 10px; border: 1px solid #ccc; background-color: #fefefe;">
+    <strong>도움말:</strong><br>
+    1. 아래의 수 막대 중 하나를 클릭하고, 퍼즐의 빈 공간을 클릭하면 수 막대가 퍼즐에 채워집니다.<br>
+    2. 수 막대를 지우고 싶으면, 퍼즐에 있는 수 막대를 클릭해 보세요.
+  </div>
+  <h2 id="title">6의 약수를 찾아 퍼즐을 완성해 보세요.</h2>
+  <div class="problem-area">
+    <div class="target-block" id="targetBlock">6</div>
+    <div class="drop-zones" id="dropZones"></div>
+  </div>
+  <div class="block-bank" id="blockBank"></div>
+  <div>
+    <button id="checkBtn">정답 확인</button>
+    <button id="nextBtn">다음 문제</button>
+  </div>
+  <div id="scoreboard">정답 횟수: <span id="score">0</span></div>
+  <div id="result"></div>
+  <script>
+    const checkBtn = document.getElementById('checkBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const result = document.getElementById('result');
+    const title = document.getElementById('title');
+    const targetBlock = document.getElementById('targetBlock');
+    const dropZonesContainer = document.getElementById('dropZones');
+    const blockBank = document.getElementById('blockBank');
+    const helpBox = document.getElementById('helpBox');
+    const predefinedProblems = [6, 4, 8, 9, 10, 12, 13, 14, 15, 16, 18, 20, 21, 22, 24, 25, 27, 28, 30, 32, 34, 35, 36, 37, 38, 42, 54];
+    window.nextTargetIndex = 1;
+
+    let selectedValue = null;
+    let selectedColor = null;
+    let selectedWidth = null;
+    let dropZones = [];
+
+    const getFactors = (num) => {
+      const factors = [];
+      for (let i = 1; i <= num; i++) {
+        if (num % i === 0) factors.push(i);
+      }
+      return factors;
+    };
+
+    const createBlock = (n, unit) => {
+      const block = document.createElement('div');
+      block.className = 'block';
+      block.textContent = n;
+      block.dataset.value = n;
+      block.style.width = `${n * unit}px`;
+      const colorPalette = ['#ffd966', '#d9a3d9', '#93c47d', '#e6b8af', '#d0e0e3', '#cfe2f3', '#f4cccc', '#c9daf8', '#b6d7a8', '#f9cb9c'];
+      block.style.backgroundColor = colorPalette[n % colorPalette.length];
+      return block;
+    };
+
+    const setupDropZones = (target, validFactors) => {
+      dropZones.forEach((zone, idx) => {
+        zone.innerHTML = '<div class="hint-grid"></div>';
+        const hintGrid = zone.querySelector('.hint-grid');
+        hintGrid.style.width = `${target * 60}px`;
+        hintGrid.style.display = 'flex';
+        const count = target / validFactors[idx];
+        hintGrid.innerHTML = '';
+        for (let i = 0; i < count; i++) {
+          const cell = document.createElement('div');
+          cell.className = 'hint-cell';
+          cell.style.width = `${validFactors[idx] * 60}px`;
+          hintGrid.appendChild(cell);
+        }
+
+        zone.addEventListener('click', () => {
+          if (selectedValue) {
+            const block = document.createElement('div');
+            block.className = 'block';
+            block.textContent = selectedValue;
+            block.dataset.value = selectedValue;
+            block.style.width = selectedWidth;
+            block.style.backgroundColor = selectedColor;
+            block.style.flex = `0 0 ${selectedWidth}`;
+            block.style.boxSizing = 'border-box';
+            block.classList.add('drop-child');
+            block.addEventListener('click', (e) => {
+              e.stopPropagation();
+              block.remove();
+            });
+            zone.appendChild(block);
+          }
+        });
+      });
+    };
+
+    const generatePuzzle = (target) => {
+      const unit = 60;
+      const totalWidth = target * unit;
+      const scaleRatio = target > 20 ? 20 / target : 1;
+      document.body.style.transform = `scale(${scaleRatio})`;
+      document.body.style.fontSize = `${Math.max(16, 20 * scaleRatio)}px`;
+
+      title.textContent = `${target}의 약수를 찾아 퍼즐을 완성해 보세요.`;
+      targetBlock.textContent = target;
+      targetBlock.style.width = `${totalWidth}px`;
+      dropZonesContainer.innerHTML = '';
+      dropZonesContainer.style.width = `${totalWidth}px`;
+      blockBank.innerHTML = '';
+      result.textContent = '';
+      nextBtn.style.display = 'inline-block';
+
+      if (window.nextTargetIndex > 1 && helpBox) helpBox.style.display = 'none';
+
+      const factors = getFactors(target);
+      dropZones = [];
+      factors.forEach(() => {
+        const zone = document.createElement('div');
+        zone.className = 'drop-zone';
+        zone.style.width = `${totalWidth}px`;
+        dropZonesContainer.appendChild(zone);
+        dropZones.push(zone);
+      });
+
+      const unique = [...new Set([
+        ...factors,
+        ...Array.from({ length: Math.min(factors.length, 5) }, () => {
+          let n;
+          do {
+            n = Math.floor(Math.random() * (target - 1)) + 1;
+          } while (factors.includes(n));
+          return n;
+        })
+      ])];
+
+      unique.forEach(n => {
+        const block = createBlock(n, unit);
+        block.addEventListener('click', () => {
+          selectedValue = n;
+          selectedWidth = `${n * unit}px`;
+          selectedColor = block.style.backgroundColor;
+          document.querySelectorAll('.block').forEach(b => b.style.outline = '');
+          block.style.outline = '3px solid #333';
+        });
+        blockBank.appendChild(block);
+      });
+
+      setupDropZones(target, factors);
+
+      if (target !== 6 && dropZones.length > 0) {
+        const firstZone = dropZones[0];
+        for (let i = 0; i < target; i++) {
+          const autoBlock = createBlock(1, unit);
+          autoBlock.classList.add('drop-child');
+          autoBlock.style.flex = `0 0 ${unit}px`;
+          autoBlock.style.boxSizing = 'border-box';
+          autoBlock.dataset.value = 1;
+          autoBlock.addEventListener('click', (e) => {
+            e.stopPropagation();
+            autoBlock.remove();
+          });
+          firstZone.appendChild(autoBlock);
+        }
+      }
+    };
+
+    checkBtn.addEventListener('click', () => {
+      const target = parseInt(targetBlock.textContent);
+      const validFactors = getFactors(target);
+      let allCorrect = true;
+      const scoreDisplay = document.getElementById('score');
+      let currentScore = parseInt(scoreDisplay.textContent);
+      dropZones.forEach(zone => {
+        const factor = validFactors[dropZones.indexOf(zone)];
+        const blocks = Array.from(zone.querySelectorAll('.block'));
+        let total = 0;
+        let aligned = true;
+        let currentLeft = 0;
+        blocks.forEach(block => {
+          const value = parseInt(block.dataset.value);
+          total += value;
+          if (value !== factor) aligned = false;
+          const expectedLeft = zone.getBoundingClientRect().left + currentLeft;
+          const actualLeft = block.getBoundingClientRect().left;
+          if (Math.abs(expectedLeft - actualLeft) > 2) aligned = false;
+          currentLeft += value * 60;
+        });
+        if (total !== target || !blocks.every(block => validFactors.includes(parseInt(block.dataset.value))) || !aligned) {
+          allCorrect = false;
+        }
+      });
+      result.textContent = allCorrect ? '정답입니다!' : '다시 시도해 보세요.';
+      if (allCorrect) scoreDisplay.textContent = currentScore + 1;
+      result.style.color = allCorrect ? 'green' : 'red';
+    });
+
+    nextBtn.addEventListener('click', () => {
+      let nextTarget;
+      if (window.nextTargetIndex < predefinedProblems.length) {
+        nextTarget = predefinedProblems[window.nextTargetIndex++];
+      } else {
+        do {
+          nextTarget = Math.floor(Math.random() * 45) + 10;
+        } while (nextTarget === parseInt(targetBlock.textContent));
+      }
+      generatePuzzle(nextTarget);
+    });
+
+    generatePuzzle(6);
+  </script>
+</body>
+</html>
